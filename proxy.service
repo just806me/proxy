@@ -1,0 +1,13 @@
+[Unit]
+  Description = proxy service
+  After = network.service
+
+[Service]
+  WorkingDirectory=/home/ubuntu
+  ExecStart=/home/ubuntu/proxy
+  Restart=always
+  User=root
+  Group=root
+
+[Install]
+  WantedBy=multi-user.target
