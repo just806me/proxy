@@ -1,11 +1,13 @@
+mod worker;
+
 use simple_error::{SimpleError, SimpleResult as Result};
+use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
-use std::{io::prelude::*, io::ErrorKind};
 use tls_parser::tls_extensions::SNIType;
 use tls_parser::{TlsClientHelloContents, TlsExtension, TlsMessage, TlsMessageHandshake, TlsPlaintext};
+use worker::Worker;
 
-const BUF_SIZE: usize = 8 * 1024;
 const MAX_TSL_LENGTH: usize = 16384;
 
 fn main() {
@@ -81,7 +83,7 @@ fn extract_server_name(message: &TlsMessage) -> Result<String> {
     }
 }
 
-fn spawn_copy_thread(id: String, mut client: TcpStream, mut server: TcpStream) {
+fn spawn_copy_thread(id: String, client: TcpStream, server: TcpStream) {
     thread::spawn(move || {
         eprintln!("{} thread started", id);
 
@@ -89,25 +91,11 @@ fn spawn_copy_thread(id: String, mut client: TcpStream, mut server: TcpStream) {
 
         server.set_nonblocking(true).unwrap();
 
-        let mut buf = [0; BUF_SIZE];
+        let mut cs = Worker::new(&client, &server);
 
-        loop {
-            match client.read(&mut buf) {
-                Err(ref e) if e.kind() == ErrorKind::Interrupted || e.kind() == ErrorKind::WouldBlock => (),
+        let mut sc = Worker::new(&server, &client);
 
-                Err(_) | Ok(0) => break,
-
-                Ok(len) => server.write_all(&buf[..len]).unwrap(),
-            };
-
-            match server.read(&mut buf) {
-                Err(ref e) if e.kind() == ErrorKind::Interrupted || e.kind() == ErrorKind::WouldBlock => (),
-
-                Err(_) | Ok(0) => break,
-
-                Ok(len) => client.write_all(&buf[..len]).unwrap(),
-            };
-        }
+        while cs.run() && sc.run() {}
 
         eprintln!("{} thread done", id);
     });
